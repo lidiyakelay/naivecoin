@@ -1,4 +1,4 @@
-# Blockchain Implementation Project
+# Blockchain Implementation Project 
 
 <div align="center">
     <p>This repository contains implementations of a blockchain, organized into three separate chapters. Each chapter follows a structured approach, with its own branch and corresponding implementation based on that chapter’s instructions.</p>

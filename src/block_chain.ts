@@ -1,6 +1,6 @@
 import CryptoJS from 'crypto-js';
 import {hexToBinary} from './utils';
-
+import {UnspentTxOut, Transaction, processTransactions} from './transactions'
 
 export class Block {
     
@@ -8,12 +8,12 @@ export class Block {
     public hash: string;
     public previousHash: string;
     public timestamp: number;
-    public data: string;
+    public data: Transaction[];
     public difficulty: number;
     public nonce: number;
 
     constructor(index: number, hash: string, previousHash: string,
-                timestamp: number, data: string, difficulty: number, nonce: number) {
+                timestamp: number, data:Transaction[], difficulty: number, nonce: number) {
         this.index = index;
         this.previousHash = previousHash;
         this.timestamp = timestamp;
@@ -24,22 +24,17 @@ export class Block {
     } 
 }
 
-export const calculateHash = (index: number, previousHash: string, timestamp: number, data: string,
+export const calculateHash = (index: number, previousHash: string, timestamp: number, data: Transaction[],
     difficulty: number, nonce: number): string =>
 CryptoJS.SHA256(index + previousHash + timestamp + data + difficulty + nonce).toString();
 
 // Create the genesis block with a calculated hash
 const genesisBlock: Block = new Block(
-    0,
-    '816534932c2b7154836da6afc367695e6337db8a921823784c14378abed4f7d7',
-    '',
-    1465154705,
-    'my genesis block!!'
-    , 0, 0
+    0, '91a73664bc84c0baa1fc75ea6e4aa6d1d20c5df664c724e3159aefc2e1186627', '', 1465154705, [], 0, 0
 );
 
 export let blockchain: Block[] = [genesisBlock];
-
+export let unspentTxOuts: UnspentTxOut[] = [];
 export const getBlockchain = (): Block[] => blockchain;
 export const getLatestBlock = (): Block => blockchain[blockchain.length - 1];
 
@@ -87,12 +82,12 @@ export const hasValidHash = (block: Block): boolean => {
     
     
 };
-export const isValidBlockStructure = (block: Block): boolean => {
-    return typeof block.index === 'number' &&
-        typeof block.hash === 'string' &&
-        typeof block.previousHash === 'string' &&
-        typeof block.timestamp === 'number' &&
-        typeof block.data === 'string';
+const isValidBlockStructure = (block: Block): boolean => {
+    return typeof block.index === 'number'
+        && typeof block.hash === 'string'
+        && typeof block.previousHash === 'string'
+        && typeof block.timestamp === 'number'
+        && typeof block.data === 'object';
 };
 const isValidTimestamp = (newBlock: Block, previousBlock: Block): boolean => {
     return ( previousBlock.timestamp - 60 < newBlock.timestamp )
@@ -118,14 +113,21 @@ export const isValidNewBlock = (newBlock: Block, previousBlock: Block): boolean 
     }
     return true;
 };
-
 export const addBlock = (newBlock: Block) => {
     if (isValidNewBlock(newBlock, getLatestBlock())) {
-        blockchain.push(newBlock);
-        console.log('Block added:', newBlock);
-    } else {
-        console.log('Block not added due to validation failure');
+        console.log(newBlock.index)
+        const retVal = processTransactions(newBlock.data, unspentTxOuts, newBlock.index);
+        if (retVal === null) {
+            console.log('Transaction processing failed for block:', newBlock);
+            return false;
+        } else {
+            blockchain.push(newBlock);
+            unspentTxOuts = retVal;
+            return true;
+        }
     }
+    console.log('Invalid new block:', newBlock);
+    return false;
 };
 export const hashMatchesDifficulty = (hash: string, difficulty: number): boolean => {
     const hashInBinary: string = hexToBinary(hash)!;
@@ -139,7 +141,7 @@ export const getAccumulatedDifficulty = (aBlockchain: Block[]): number => {
         .map((difficulty) => Math.pow(2, difficulty))
         .reduce((a, b) => a + b);
 };
-export const findBlock = (index: number, previousHash: string, timestamp: number, data: string, difficulty: number): Block => {
+export const findBlock = (index: number, previousHash: string, timestamp: number, data: Transaction[], difficulty: number): Block => {
     let nonce = 0;
     while (true) {
         const hash: string = calculateHash(index, previousHash, timestamp, data, difficulty, nonce);
@@ -152,15 +154,17 @@ export const findBlock = (index: number, previousHash: string, timestamp: number
         nonce++;
     }
 };
-export const generateNextBlock = (blockData: string) => {
+export const generateNextBlock = (blockData: Transaction[]) => {
     const previousBlock: Block = getLatestBlock();
     const nextIndex: number = previousBlock.index + 1;
     const nextTimestamp: number = Math.floor(new Date().getTime() / 1000);
     const difficulty: number = getDifficulty(getBlockchain());
-    console.log('difficulty: ' + difficulty);
     const newBlock: Block = findBlock(nextIndex, previousBlock.hash, nextTimestamp, blockData, difficulty);
-    addBlock(newBlock);
-    return newBlock;
+    if(addBlock(newBlock)) {
+        return newBlock;
+    } else {
+        return null;
+    }
 };
 
 export const isValidChain = (blockchainToValidate: Block[]): boolean => {
@@ -189,48 +193,3 @@ export const replaceChain = (newBlocks: Block[]) => {
     }
 };
 
-// Function to create a valid chain based on the current chain
-export const createValidChain = (): Block[] => {
-    const newBlockchain = [...getBlockchain()]; // Clone the current blockchain
-
-    // Manually create valid blocks without adding them to the global blockchain
-    const previousBlock = newBlockchain[newBlockchain.length - 1];
-    const newBlock1 = new Block(
-        previousBlock.index + 1,
-        calculateHash(previousBlock.index + 1, previousBlock.hash, Math.floor(new Date().getTime() / 1000), 'Valid block 1',5,5),
-        previousBlock.hash,
-        Math.floor(new Date().getTime() / 1000),
-        'Valid block 1',
-        5,5
-    );
-    newBlockchain.push(newBlock1);
-
-    const newBlock2 = new Block(
-        newBlock1.index + 1,
-        calculateHash(newBlock1.index + 1, newBlock1.hash, Math.floor(new Date().getTime() / 1000), 'Valid block 2',5,5),
-        newBlock1.hash,
-        Math.floor(new Date().getTime() / 1000),
-        'Valid block 2',5,5
-    );
-    newBlockchain.push(newBlock2);
-
-    return newBlockchain;
-};
-
-// Function to create an invalid chain
-export const createInvalidChain = (): Block[] => {
-    const newBlockchain = [...getBlockchain()]; // Clone the current blockchain
-
-    // Create a block with an incorrect previous hash manually
-    const previousBlock = newBlockchain[newBlockchain.length - 1];
-    const invalidBlock = new Block(
-        previousBlock.index + 1,
-        calculateHash(previousBlock.index + 1, 'incorrectPreviousHash', Math.floor(new Date().getTime() / 1000), 'Invalid block',5,5),
-        'incorrectPreviousHash',
-        Math.floor(new Date().getTime() / 1000),
-        'Invalid block',5,5
-    );
-    newBlockchain.push(invalidBlock);
-
-    return newBlockchain;
-};
